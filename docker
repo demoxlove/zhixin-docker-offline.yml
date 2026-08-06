@@ -1,0 +1,38 @@
+name: Build Docker Offline Image
+
+# 触发条件：当推送到 main 分支，或者手动在 GitHub 页面触发
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build_and_package:
+    runs-with: ubuntu-latest
+
+    steps:
+      # 1. 检出仓库代码（此处使用最新版，避免你之前遇到的 Node.js 警告）
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Docker Buildx（强大的 Docker 构建工具）
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      # 3. 构建 Docker 镜像并将其导出为本地 tar 压缩包
+      - name: Build Docker Image
+        run: |
+          # 这里的 my-app:latest 是镜像名称和标签，你可以自己修改
+          # 最后的 . 代表 Dockerfile 存放在仓库根目录
+          docker build -t my-app:latest .
+          
+          # 将构建好的镜像保存为离线 tar 包，并使用 gzip 压缩减小体积
+          docker save my-app:latest | gzip > my-app-latest.tar.gz
+
+      # 4. 将离线包上传到 GitHub Artifacts，方便网页下载
+      - name: Upload Offline Tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-offline-image
+          path: my-app-latest.tar.gz
+          retention-days: 7 # 离线包在 GitHub 上保存 7 天
