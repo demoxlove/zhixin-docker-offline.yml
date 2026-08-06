@@ -1,0 +1,30 @@
+name: Build Docker Offline Image
+
+on:
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  build:
+    runs-with: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build and Package
+        run: |
+          # 临时创建一个测试用的 Dockerfile（如果你的 docker 文件夹里已经有了，可以删掉这两行）
+          echo "FROM alpine" > Dockerfile
+          echo "RUN echo 'Hello Offline Docker'" >> Dockerfile
+          
+          # 开始构建并打包
+          docker build -t my-app:latest .
+          docker save my-app:latest | gzip > my-app-latest.tar.gz
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-offline-image
+          path: my-app-latest.tar.gz
