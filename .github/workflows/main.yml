@@ -1,1 +1,82 @@
+name: x86-64 Pull and Save Docker Image
 
+on:
+  workflow_dispatch:
+    inputs:
+      docker_images:
+        description: '请填写 docker 镜像名称，多个用英文逗号分开'
+        required: true
+        default: 'alpine:latest, busybox:stable-glibc' # 带有空格也能完美兼容
+
+jobs:
+  pull_and_package:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Clean up Docker to free space
+      run: |
+        echo "=== 清理 Docker 缓存和卷以释放磁盘空间 ==="
+        docker system prune -a -f
+        docker volume prune -f
+
+    - name: Pull Docker Images and Package
+      run: |
+        # 1. 将输入的字符串按逗号分割到数组中
+        IFS=',' read -r -a raw_images <<< "${{ github.event.inputs.docker_images }}"
+        
+        failed_images=()
+
+        for raw_image in "${raw_images[@]}"; do
+          # 2. 使用 xargs 去除前后可能存在的空格
+          image=$(echo "$raw_image" | xargs)
+          
+          # 跳过空字符串
+          if [ -z "$image" ]; then
+            continue
+          fi
+          
+          echo ""
+          echo "=========================================="
+          echo "🚀 正在处理镜像: $image"
+          echo "=========================================="
+          
+          # 3. 拉取指定平台的镜像（如果失败则记录并不中断整个流程）
+          if ! docker pull "$image" --platform "linux/amd64"; then
+            echo "❌ 错误: 拉取镜像 $image 失败"
+            failed_images+=("$image")
+            continue
+          fi
+          
+          # 4. 转换文件名中的特殊字符（将 / 和 : 替换为 _）
+          image_name="${image//\//_}"
+          image_name="${image_name//:/_}"
+          
+          tar_file="${image_name}-amd64.tar"
+          gz_file="${image_name}-amd64.tar.gz"
+          
+          # 5. 保存并打包为 tar.gz
+          echo "📦 正在导出并压缩为 $gz_file ..."
+          docker save "$image" -o "$tar_file"
+          gzip -c "$tar_file" > "$gz_file"
+          rm "$tar_file"
+          
+          echo "✅ 镜像 $image 打包成功！"
+        done
+
+        # 6. 如果有镜像拉取失败，在此处统一报错退出
+        if [ ${#failed_images[@]} -gt 0 ]; then
+          echo ""
+          echo "❌ 以下镜像处理失败: ${failed_images[*]}"
+          exit 1
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-images-amd64
+        path: |
+          *.tar.gz
+        retention-days: 1 # 保留 1 天，可根据需要调整（最多 90 天）
